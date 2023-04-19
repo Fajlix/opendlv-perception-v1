@@ -71,34 +71,33 @@ keySemCondition = sysv_ipc.ftok(name, 3, True)
 shm = sysv_ipc.SharedMemory(keySharedMemory)
 mutex = sysv_ipc.Semaphore(keySemCondition)
 cond = sysv_ipc.Semaphore(keySemCondition)
+# not inverted:
+inverted = True
+# for blue (right) cones
+hmin, smin, vmin = 110, 89, 55
+hmax, smax, vmax = 141, 255, 255
+# inverted:
+if inverted:
+    hmin, smin, vmin = 10, 9, 162
+    hmax, smax, vmax = 41, 255, 255
+cv.namedWindow('image')
+cv.createTrackbar('Hmin','image',0,180,lambda x: x)
+cv.createTrackbar('Smin','image',0,255,lambda x: x)
+cv.createTrackbar('Vmin','image',0,255,lambda x: x)
+cv.createTrackbar('Hmax','image',0,180,lambda x: x)
+cv.createTrackbar('Smax','image',0,255,lambda x: x)
+cv.createTrackbar('Vmax','image',0,255,lambda x: x)
+cv.setTrackbarPos('Hmin','image',hmin)
+cv.setTrackbarPos('Smin','image',smin)
+cv.setTrackbarPos('Vmin','image',vmin)
+cv.setTrackbarPos('Hmax','image',hmax)
+cv.setTrackbarPos('Smax','image', smax)
+cv.setTrackbarPos('Vmax','image', vmax)
 
-################################################################################
-# Main loop to process the next image frame coming in.
-while True:
-    # Wait for next notification.
-    cond.Z()
-    print ("Received new frame.")
-
-    # Lock access to shared memory.
-    mutex.acquire()
-    # Attach to shared memory.
-    shm.attach()
-    # Read shared memory into own buffer.
-    buf = shm.read()
-    # Detach to shared memory.
-    shm.detach()
-    # Unlock access to shared memory.
-    mutex.release()
-
-    # Turn buf into img array (1280 * 720 * 4 bytes (ARGB)) to be used with OpenCV.
-    img = np.frombuffer(buf, np.uint8).reshape(720, 1280, 4)
-    img = img[:, :, :3]
-
-    ############################################################################
-    # TODO: Add some image processing logic here.
-    
-    # Invert colors
-    #img = cv.bitwise_not(img)
+# set default value for MAX HSV trackbars.
+def findCones(img, color):
+    if inverted:
+        img = cv.bitwise_not(img)
     HEIGHT, WIDTH = img.shape[:2]
 
     mask = np.zeros_like(img)
@@ -123,8 +122,14 @@ while True:
     blurred = cv.GaussianBlur(hsv, (5, 5), 0)
 
     # set lower and upper bounds of blue cones
-    hmin, smin, vmin = 110, 89, 25
-    hmax, smax, vmax = 141, 255, 255
+    '''hmin = cv.getTrackbarPos('Hmin','image')
+    smin = cv.getTrackbarPos('Smin','image')
+    vmin = cv.getTrackbarPos('Vmin','image')
+    hmax = cv.getTrackbarPos('Hmax','image')
+    smax = cv.getTrackbarPos('Smax','image')
+    vmax = cv.getTrackbarPos('Vmax','image')'''
+
+
     bhsvLow = (hmin, smin, vmin)
     bhsvHi = (hmax, smax, vmax)
 
@@ -141,14 +146,12 @@ while True:
     # find contours and filter them
     contours, _ = cv.findContours(canny, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
     approxContourList = [cv.approxPolyDP(cnt, 0.01*cv.arcLength(cnt, True), True) for cnt in contours]
-    print("Number of contours: %d" % len(approxContourList))
-    filteredContours = [cnt for cnt in approxContourList if 3 <= len(cnt) <= 16]
-    print("Number of filtered contours: %d" % len(filteredContours))
+    filteredContours = [cnt for cnt in approxContourList if 3 <= len(cnt) <= 40]
     
     # remove contours that are too small
-    filteredContours = [cnt for cnt in filteredContours if cv.contourArea(cnt) > 120]
+    filteredContours = [cnt for cnt in filteredContours if cv.contourArea(cnt) > 60]
     # remove contours that are too large
-    filteredContours = [cnt for cnt in filteredContours if cv.contourArea(cnt) < 10000]
+    #filteredContours = [cnt for cnt in filteredContours if cv.contourArea(cnt) < 1000]
     hulls = [cv.convexHull(cnt) for cnt in filteredContours]
     # create rectangle around contours 
     rectangles = [cv.boundingRect(cnt) for cnt in filteredContours]
@@ -156,33 +159,80 @@ while True:
     rectangles = [rect for rect in rectangles if rect[3] > rect[2]]
     # find center of rectangle
     centers = [(int(rect[0] + rect[2]/2), int(rect[1] + rect[3]/2)) for rect in rectangles]
+    
+    return rectangles, centers
+    
+
+################################################################################
+# Main loop to process the next image frame coming in.
+hasFrame = False
+while True:
+    # Wait for next notification.
+    # wait 100 ms for n key press
+    key = cv.waitKey(2)
+    if key == ord('n'):
+        hasFrame = False
+    if not hasFrame:
+        hasFrame = True
+        cond.Z()
+
+        print ("Received new frame.")
+
+        # Lock access to shared memory.
+        mutex.acquire()
+        # Attach to shared memory.
+        shm.attach()
+        # Read shared memory into own buffer.
+        buf = shm.read()
+        # Detach to shared memory.
+        shm.detach()
+        # Unlock access to shared memory.
+        mutex.release()
+    
+    # Turn buf into img array (1280 * 720 * 4 bytes (ARGB)) to be used with OpenCV.
+    img = np.frombuffer(buf, np.uint8).reshape(720, 1280, 4)
+    img = img[:, :, :3]
+    if inverted:
+        hmin, smin, vmin = 10, 9, 162
+        hmax, smax, vmax = 41, 255, 255
+    blueRect, blueCenter = findCones(img, 'blue')
+    if inverted:
+        hmin, smin, vmin = 80, 43, 120
+        hmax, smax, vmax = 130, 255, 255
+    yellowRect, yellowCenter = findCones(img, 'yellow')
+    ############################################################################
+    # TODO: Add some image processing logic here.
+    
+    # Invert colors
     # draw centers on the original image
     centersImg = img.copy()
-    for center in centers:
+    for center in blueCenter:
         cv.circle(centersImg, center, 2, (0,0,255), 2)
+    for center in yellowCenter:
+        cv.circle(centersImg, center, 2, (0,255,255), 2)
     # draw lines between centers starting from the bottom
-    centers.sort(key=lambda tup: tup[1])
-    for i in range(len(centers)-1):
-        cv.line(centersImg, centers[i], centers[i+1], (0,0,255), 2)
+    blueCenter.sort(key=lambda tup: tup[1])
+    yellowCenter.sort(key=lambda tup: tup[1])
+    for i in range(len(blueCenter)-1):
+        cv.line(centersImg, blueCenter[i], blueCenter[i+1], (0,0,255), 2)
+    for i in range(len(yellowCenter)-1):
+        cv.line(centersImg, yellowCenter[i], yellowCenter[i+1], (0,255,255), 2)
 
     # draw rectangles on the original image
-    for rect in rectangles:
+    for rect in blueRect:
+        cv.rectangle(centersImg, (rect[0], rect[1]), (rect[0]+rect[2], rect[1]+rect[3]), (0,255,0), 2)
+    for rect in yellowRect:
         cv.rectangle(centersImg, (rect[0], rect[1]), (rect[0]+rect[2], rect[1]+rect[3]), (0,255,0), 2)
     
-        
-    
-    cont = np.zeros_like(canny)
-    cv.drawContours(cont, approxContourList, -1, (255, 255, 255), 2)
 
     # show the final output
     cv.imshow("Output", centersImg)
-
     # Draw a red rectangle
     #cv.rectangle(img, (50, 50), (100, 100), (0,0,255), 2)
 
     # TODO: Disable the following two lines before running on Kiwi:
-    cv.imshow("image", img);
-    cv.waitKey(2);
+    #cv.imshow("org image", img);
+    #cv.waitKey(2);
 
     ############################################################################
     # Example: Accessing the distance readings.
