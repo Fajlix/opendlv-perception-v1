@@ -18,9 +18,9 @@
 
 # sysv_ipc is needed to access the shared memory where the camera image is present.
 import sysv_ipc
-# numpy and cv are needed to access, modify, or display the pixels
+# numpy and cv2 are needed to access, modify, or display the pixels
 import numpy as np
-import cv2 as cv
+import cv2
 # OD4Session is needed to send and receive messages
 import OD4Session
 # Import the OpenDLV Standard Message Set.
@@ -33,9 +33,9 @@ distances = { "front": 0.0, "left": 0.0, "right": 0.0, "rear": 0.0 };
 ################################################################################
 # This callback is triggered whenever there is a new distance reading coming in.
 def onDistance(msg, senderStamp, timeStamps):
-    #print ("Received distance; senderStamp= %s" % (str(senderStamp)))
-    #print ("sent: %s, received: %s, sample time stamps: %s" % (str(timeStamps[0]), str(timeStamps[1]), str(timeStamps[2])))
-    #print ("%s" % (msg))
+    print ("Received distance; senderStamp= %s" % (str(senderStamp)))
+    print ("sent: %s, received: %s, sample time stamps: %s" % (str(timeStamps[0]), str(timeStamps[1]), str(timeStamps[2])))
+    print ("%s" % (msg))
     if senderStamp == 0:
         distances["front"] = msg.distance
     if senderStamp == 1:
@@ -58,7 +58,7 @@ messageIDDistanceReading = 1039
 session.registerMessageCallback(messageIDDistanceReading, onDistance, opendlv_standard_message_set_v0_9_10_pb2.opendlv_proxy_DistanceReading)
 # Connect to the network session.
 session.connect()
-(HEIGHT, WIDTH) = (720, 1280)
+
 ################################################################################
 # The following lines connect to the camera frame that resides in shared memory.
 # This name must match with the name used in the h264-decoder-viewer.yml file.
@@ -71,169 +71,84 @@ keySemCondition = sysv_ipc.ftok(name, 3, True)
 shm = sysv_ipc.SharedMemory(keySharedMemory)
 mutex = sysv_ipc.Semaphore(keySemCondition)
 cond = sysv_ipc.Semaphore(keySemCondition)
-# not inverted:
-inverted = True
-# for blue (right) cones
-hmin, smin, vmin = 110, 89, 55
-hmax, smax, vmax = 141, 255, 255
-# inverted:
-if inverted:
-    hmin, smin, vmin = 10, 9, 162
-    hmax, smax, vmax = 41, 255, 255
-cv.namedWindow('image')
-cv.createTrackbar('Hmin','image',0,180,lambda x: x)
-cv.createTrackbar('Smin','image',0,255,lambda x: x)
-cv.createTrackbar('Vmin','image',0,255,lambda x: x)
-cv.createTrackbar('Hmax','image',0,180,lambda x: x)
-cv.createTrackbar('Smax','image',0,255,lambda x: x)
-cv.createTrackbar('Vmax','image',0,255,lambda x: x)
-cv.setTrackbarPos('Hmin','image',hmin)
-cv.setTrackbarPos('Smin','image',smin)
-cv.setTrackbarPos('Vmin','image',vmin)
-cv.setTrackbarPos('Hmax','image',hmax)
-cv.setTrackbarPos('Smax','image', smax)
-cv.setTrackbarPos('Vmax','image', vmax)
-
-# set default value for MAX HSV trackbars.
-def findCones(img, color):
-    if inverted:
-        img = cv.bitwise_not(img)
-    HEIGHT, WIDTH = img.shape[:2]
-
-    mask = np.zeros_like(img)
-    # FILL the mask with white
-    mask[:] = (255, 255, 255)
-    cv.rectangle(mask, (0, 0), (img.shape[1], int(img.shape[0]*0.56)), (0, 0, 0), -1)
-
-    # create mask2
-    mask2 = np.zeros_like(img)
-    mask2[:] = (255, 255, 255)
-    pts = np.array([(0, HEIGHT), (460, HEIGHT-110), (WIDTH-500, HEIGHT-110), (WIDTH, HEIGHT)])
-    cv.fillPoly(mask2, [pts], (0, 0, 0))
-
-    # combine mask1 and mask2
-    mask3 = cv.bitwise_and(mask, mask2)
-
-    # apply mask3
-    masked = cv.bitwise_and(img, mask3)
-
-    # convert to HSV and apply threshold
-    hsv = cv.cvtColor(masked, cv.COLOR_BGR2HSV)
-    blurred = cv.GaussianBlur(hsv, (5, 5), 0)
-
-    # set lower and upper bounds of blue cones
-    '''hmin = cv.getTrackbarPos('Hmin','image')
-    smin = cv.getTrackbarPos('Smin','image')
-    vmin = cv.getTrackbarPos('Vmin','image')
-    hmax = cv.getTrackbarPos('Hmax','image')
-    smax = cv.getTrackbarPos('Smax','image')
-    vmax = cv.getTrackbarPos('Vmax','image')'''
-
-
-    bhsvLow = (hmin, smin, vmin)
-    bhsvHi = (hmax, smax, vmax)
-
-    # apply color thresholding
-    blueCones = cv.inRange(blurred, bhsvLow, bhsvHi)
-
-    # morphological operations
-    iterations = 3
-    kernel = np.ones((3,3), np.uint8)
-    dilate = cv.dilate(blueCones, kernel, iterations=iterations)
-    erode = cv.erode(dilate, kernel, iterations=iterations)
-    canny = cv.Canny(erode, 30, 90)
-
-    # find contours and filter them
-    contours, _ = cv.findContours(canny, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-    approxContourList = [cv.approxPolyDP(cnt, 0.01*cv.arcLength(cnt, True), True) for cnt in contours]
-    filteredContours = [cnt for cnt in approxContourList if 3 <= len(cnt) <= 40]
-    
-    # remove contours that are too small
-    filteredContours = [cnt for cnt in filteredContours if cv.contourArea(cnt) > 60]
-    # remove contours that are too large
-    #filteredContours = [cnt for cnt in filteredContours if cv.contourArea(cnt) < 1000]
-    hulls = [cv.convexHull(cnt) for cnt in filteredContours]
-    # create rectangle around contours 
-    rectangles = [cv.boundingRect(cnt) for cnt in filteredContours]
-    # if the rectangle is wider than it is tall, remove it
-    rectangles = [rect for rect in rectangles if rect[3] > rect[2]]
-    # find center of rectangle
-    centers = [(int(rect[0] + rect[2]/2), int(rect[1] + rect[3]/2)) for rect in rectangles]
-    
-    return rectangles, centers
-    
 
 ################################################################################
 # Main loop to process the next image frame coming in.
-hasFrame = False
 while True:
     # Wait for next notification.
-    # wait 100 ms for n key press
-    key = cv.waitKey(2)
-    if key == ord('n'):
-        hasFrame = False
-    if not hasFrame:
-        hasFrame = True
-        cond.Z()
+    cond.Z()
+    print ("Received new frame.")
 
-        print ("Received new frame.")
+    # Lock access to shared memory.
+    mutex.acquire()
+    # Attach to shared memory.
+    shm.attach()
+    # Read shared memory into own buffer.
+    buf = shm.read()
+    # Detach to shared memory.
+    shm.detach()
+    # Unlock access to shared memory.
+    mutex.release()
 
-        # Lock access to shared memory.
-        mutex.acquire()
-        # Attach to shared memory.
-        shm.attach()
-        # Read shared memory into own buffer.
-        buf = shm.read()
-        # Detach to shared memory.
-        shm.detach()
-        # Unlock access to shared memory.
-        mutex.release()
-    
     # Turn buf into img array (1280 * 720 * 4 bytes (ARGB)) to be used with OpenCV.
     img = np.frombuffer(buf, np.uint8).reshape(720, 1280, 4)
-    img = img[:, :, :3]
-    if inverted:
-        hmin, smin, vmin = 10, 9, 162
-        hmax, smax, vmax = 41, 255, 255
-    blueRect, blueCenter = findCones(img, 'blue')
-    if inverted:
-        hmin, smin, vmin = 80, 43, 120
-        hmax, smax, vmax = 130, 255, 255
-    yellowRect, yellowCenter = findCones(img, 'yellow')
+
     ############################################################################
     # TODO: Add some image processing logic here.
-    
+ 
     # Invert colors
-    # draw centers on the original image
-    centersImg = img.copy()
-    for center in blueCenter:
-        cv.circle(centersImg, center, 2, (0,0,255), 2)
-    for center in yellowCenter:
-        cv.circle(centersImg, center, 2, (0,255,255), 2)
-    # draw lines between centers starting from the bottom
-    blueCenter.sort(key=lambda tup: tup[1])
-    yellowCenter.sort(key=lambda tup: tup[1])
-    for i in range(len(blueCenter)-1):
-        cv.line(centersImg, blueCenter[i], blueCenter[i+1], (0,0,255), 2)
-    for i in range(len(yellowCenter)-1):
-        cv.line(centersImg, yellowCenter[i], yellowCenter[i+1], (0,255,255), 2)
-
-    # draw rectangles on the original image
-    for rect in blueRect:
-        cv.rectangle(centersImg, (rect[0], rect[1]), (rect[0]+rect[2], rect[1]+rect[3]), (0,255,0), 2)
-    for rect in yellowRect:
-        cv.rectangle(centersImg, (rect[0], rect[1]), (rect[0]+rect[2], rect[1]+rect[3]), (0,255,0), 2)
-    
-
-    # show the final output
-    cv.imshow("Output", centersImg)
+    #img = cv2.bitwise_not(img)
     # Draw a red rectangle
-    #cv.rectangle(img, (50, 50), (100, 100), (0,0,255), 2)
-
+    #cv2.rectangle(img, (50, 50), (100, 100), (0,0,255), 2)
     # TODO: Disable the following two lines before running on Kiwi:
-    #cv.imshow("org image", img);
-    #cv.waitKey(2);
+    #cv2.imshow("image", img);
+    #cv2.waitKey(2);
+    
+    # converts the image img from the BGR color space to the HSV color 
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    # drawing a black rectangle on the defined coordinates
+    crop_hsv = cv2.rectangle(hsv, (0,0),(1255, 300), (0,0,0), -1)
 
+    # creating a blue mask
+    blue_lower = np.array([110,45,45])
+    blue_upper = np.array([135,255,255])
+    blue_mask = cv2.inRange(crop_hsv, blue_lower, blue_upper)
+
+    # creating a yellow mask
+    yellow_lower = np.array([18,30,30])
+    yellow_upper = np.array([60,255,255])
+    yellow_mask = cv2.inRange(crop_hsv, yellow_lower, yellow_upper)
+
+    # finding the contours in the binary masks using cv2
+    # The RETR_TREE parameter retrieves all of the contours
+    # CHAIN_APPROX_SIMPLE compresses horizontal, vertical, and diagonal segments and leaves only their end points.
+    blue_contours, blue_hierarchy = cv2.findContours(blue_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    yellow_contours, yellow_hierarchy = cv2.findContours(yellow_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) 
+
+    new_img = img
+    max_area = 6000
+    min_area = 850
+
+    for c in blue_contours:
+       if cv2.contourArea(c) > min_area and cv2.contourArea(c) < max_area:
+          x, y, w, h = cv2.boundingRect(c)
+          x_center = round(x + w/2)
+          y_center = round(y + h/2)
+          new_img = cv2.circle(new_img, (x_center, y_center), round(max(w/2, h/2))+10, (255,0,0), 4)    
+
+    for c in yellow_contours:
+       if cv2.contourArea(c) > min_area and cv2.contourArea(c) < max_area:
+          x, y, w, h = cv2.boundingRect(c)
+          x_center = round(x + w/2)
+          y_center = round(y + h/2)
+          new_img = cv2.circle(new_img, (x_center, y_center), round(max(w/2, h/2))+10, (0,255,255), 4)
+
+    #cv2.imshow('HSV', hsv)
+    cv2.imshow("image", new_img)
+    cv2.waitKey(2)
+    # cv2.destroyAllWindows()
+
+		  
     ############################################################################
     # Example: Accessing the distance readings.
     print ("Front = %s" % (str(distances["front"])))
