@@ -25,6 +25,7 @@ import cv2 as cv
 import OD4Session
 # Import the OpenDLV Standard Message Set.
 import opendlv_standard_message_set_v0_9_10_pb2
+from ultralytics import YOLO
 
 ################################################################################
 # This dictionary contains all distance values to be filled by function onDistance(...).
@@ -192,6 +193,16 @@ while True:
     # Turn buf into img array (1280 * 720 * 4 bytes (ARGB)) to be used with OpenCV.
     img = np.frombuffer(buf, np.uint8).reshape(720, 1280, 4)
     img = img[:, :, :3]
+    testimg = img.copy()
+    threshold = 0.1
+
+
+
+    #results = model(img)[0]
+    cv.rectangle(testimg, (50, 50), (100, 100), (0,0,255), 2)
+    cv.imshow("test",testimg)
+    
+    cv.waitKey(0)
     if inverted:
         hmin, smin, vmin = 10, 9, 162
         hmax, smax, vmax = 41, 255, 255

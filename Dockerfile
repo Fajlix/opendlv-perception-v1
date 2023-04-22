@@ -18,12 +18,13 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get update -y && \
-    apt-get install -y --no-install-recommends \
-        software-properties-common && \
-    add-apt-repository ppa:chrberger/libcluon && \
-    apt-get update -y && \
     apt-get upgrade -y && \
-    apt-get dist-upgrade -y && \
+    apt-get install -y --no-install-recommends \
+        software-properties-common
+RUN add-apt-repository -remove ppa:chrberger/libcluon
+RUN apt-get update -y && \
+    apt-get upgrade -y 
+RUN apt-get dist-upgrade -y && \
     apt-get install -y --no-install-recommends \
         build-essential \
         python-protobuf \
