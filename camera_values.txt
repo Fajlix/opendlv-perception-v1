@@ -1,0 +1,15 @@
+Good camera values for yellow cones:
+Hmin: 17
+Smin: 115
+Vmin: 56
+Hmax: 140
+Smax: 255
+Vmax: 255
+
+Good camera values for blue cones:
+Hmin: 100
+Smin: 125 
+Vmin: 125
+Hmax: 130
+Smax: ?
+Vmax: ?
