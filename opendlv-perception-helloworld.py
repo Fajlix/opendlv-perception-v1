@@ -218,6 +218,22 @@ while True:
     for i in range(len(yellowCenter)-1):
         cv.line(centersImg, yellowCenter[i], yellowCenter[i+1], (0,255,255), 2)
 
+    numCones = 0
+    if len(blueCenter) > len(yellowCenter):
+        numCones = len(yellowCenter)
+    else:
+        numCones = len(blueCenter)
+
+    # Draw center lines between the vertical lines
+    for i in range(numCones-1):
+        x1, y1 = blueCenter[i]
+        x2, y2 = yellowCenter[i]
+        x, y = (int((x1 + x2)/2), int(((y1 + y2)/2)))   # Middle point
+        print("Coords: {0}, {1}".format(x, y))
+
+        cv.line(centersImg, (250, 250), (middlePoint[0], middlePoint[1]), (180,255,0), 2)
+        #cv.circle(centersImg, (x, y), 5, (255,255,0), 3)
+    
     # draw rectangles on the original image
     for rect in blueRect:
         cv.rectangle(centersImg, (rect[0], rect[1]), (rect[0]+rect[2], rect[1]+rect[3]), (0,255,0), 2)
